@@ -74,6 +74,8 @@
 
 (eval-when-compile (require 'cl))
 (require 'compile)
+(require 'magit)
+(require 'current-project)
 
 (add-to-list 'debug-ignored-errors
              "^Moved \\(back before fir\\|past la\\)st match$")
@@ -330,7 +332,7 @@ This can be used in `ack-root-directory-functions'."
   (when (eq (process-status proc) 'exit)
     (with-current-buffer (process-buffer proc)
       (let ((c (ack-count-matches)))
-        (if (> c 0)
+        (if (or (> c 0) (/= (buffer-size) 0))
             (when (eq ack-display-buffer 'after)
               (display-buffer (current-buffer)))
           (kill-buffer (current-buffer)))
@@ -371,20 +373,17 @@ This can be used in `ack-root-directory-functions'."
       (push (format "--context=%d" ack-context) arguments))
     arguments))
 
-(defun ack-run (directory regexp &rest arguments)
+(defun ack-run-impl (directory &rest arguments)
   "Run ack in DIRECTORY with ARGUMENTS."
   (ack-abort)
   (setq directory
         (if directory
             (file-name-as-directory (expand-file-name directory))
           default-directory))
-  (setq arguments (append ack-arguments
-                          (nconc (ack-arguments-from-options regexp)
-                                 arguments)))
   (let ((buffer (get-buffer-create ack-buffer-name))
         (inhibit-read-only t)
         (default-directory directory)
-        (rerun-args (cons directory (cons regexp arguments))))
+        (rerun-args (cons directory arguments)))
     (setq next-error-last-buffer buffer
           ack-buffer--rerun-args rerun-args)
     (with-current-buffer buffer
@@ -401,6 +400,13 @@ This can be used in `ack-root-directory-functions'."
     (set-process-sentinel ack-process 'ack-sentinel)
     (set-process-query-on-exit-flag ack-process nil)
     (set-process-filter ack-process 'ack-filter)))
+
+(defun ack-run (directory regexp &rest arguments)
+  "Run ack in DIRECTORY with ARGUMENTS."
+  (setq arguments (append ack-arguments
+                          (nconc (ack-arguments-from-options regexp)
+                                 arguments)))
+  (ack-run-impl directory arguments))
 
 (defun ack-version-string ()
   "Return the ack version string."
@@ -544,7 +550,7 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
   (interactive)
   (if ack-buffer--rerun-args
       (let ((ack-buffer-name (ack--again-buffer-name)))
-        (apply 'ack-run ack-buffer--rerun-args))
+        (apply 'ack-run-impl ack-buffer--rerun-args))
     (call-interactively 'ack)))
 
 (defun ack--again-buffer-name ()
@@ -780,6 +786,87 @@ Color is used starting ack 1.94.")
 
   (setq next-error-function 'ack-next-error-function
         ack-error-pos nil))
+
+;; (setq magit-key-mode-groups-orig (copy-tree magit-key-mode-groups))
+;; (setq magit-key-mode-groups (copy-tree magit-key-mode-groups-orig)
+;;       magit-key-mode-key-maps nil)
+
+(add-to-list 'magit-key-mode-groups
+             `(ack
+               (man-page ,ack-executable)
+               (actions
+                ("r" "Run" ack-menu-action))
+               (switches
+                ("-c" "Current project dir" "-c")
+                ("-l" "Local project dir" "-l")
+                ("-a" "All files" "--all")
+                ("-i" "Ignore case" "--ignore-case")
+                ("-n" "No recurse" "--no-recurse")
+                ("-f" "Only print file names" "--files-with-matches")
+                ("-w" "Match whole word" "--word-regexp")
+                ("-q" "Literal search, no regex" "--literal"))
+               (arguments
+                ("-m" "Match" "--match=" read-from-minibuffer)
+                ("-d" "Directory" "--directory=" read-directory-name)))
+             t)
+
+(defvar ack-menu-options '(("--ignore-case")))
+
+(defun ack-get-current-dir ()
+  (if (or (buffer-file-name)
+          (string= major-mode "shell-mode")
+          (string= major-mode "term-mode")
+          (string= major-mode "dired-mode"))
+      default-directory
+      (file-name-as-directory (getenv "HOME"))))
+
+(defun ack-menu ()
+  (interactive)
+  (let ((args (copy-tree ack-menu-options)))
+    (when (null (assoc "--directory" args))
+      (push '("--directory") args))
+    (setf (cdr (assoc "--directory" args)) (ack-get-current-dir))
+    (when (null (assoc "--match" args))
+      (push `("--match" . ,(or (word-at-point) "search")) args))
+    (magit-key-mode 'ack args)))
+
+(defun ack-filter-args (args args-to-remove)
+  (let* ((args-to-remove (mapcar (lambda (arg) (cons arg (cdr (assoc arg args)))) args-to-remove))
+         (kept-args (set-difference args args-to-remove :key 'car :test 'string=))
+         (filtered-args (intersection args args-to-remove :key 'car :test 'string=)))
+    (list kept-args filtered-args)))
+
+(defun ack-form-args-list (args)
+  (mapcar (lambda (arg)
+            (if (cdr arg)
+                (format "%s=%s" (car arg) (cdr arg))
+                (car arg)))
+          args))
+
+(defun ack-process-args (args)
+  (labels ((get-directory (args)
+             (cond ((assoc "-c" args) (if (current-project-directory)
+                                          (current-project-directory)
+                                          (error "No current project directory")))
+                   ((assoc "-l" args) (if (ack-guess-project-root)
+                                          (ack-guess-project-root)
+                                          (error "Couldn't guess project root")))
+                   ((cdr (assoc "--directory" args))))))
+    (destructuring-bind (pass-through-args filtered-args)
+        (ack-filter-args args (split-string "-c -l --directory"))
+      (let ((dir (get-directory filtered-args))
+            (hard-coded-args '(("--color") ("--context" . "2"))))
+        (when (not (file-exists-p dir))
+          (error "No such directory %s" dir))
+        (list dir (ack-form-args-list (append hard-coded-args
+                                              ack-arguments
+                                              pass-through-args)))))))
+
+(defun ack-menu-action ()
+  (interactive)
+  (setq ack-menu-options magit-custom-options-alist)
+  (destructuring-bind (dir args) (ack-process-args ack-menu-options)
+    (apply 'ack-run-impl (cons dir args))))
 
 (provide 'full-ack)
 ;;; full-ack.el ends here
