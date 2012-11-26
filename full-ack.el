@@ -787,13 +787,9 @@ Color is used starting ack 1.94.")
   (setq next-error-function 'ack-next-error-function
         ack-error-pos nil))
 
-;; (setq magit-key-mode-groups-orig (copy-tree magit-key-mode-groups))
-;; (setq magit-key-mode-groups (copy-tree magit-key-mode-groups-orig)
-;;       magit-key-mode-key-maps nil)
-
 (add-to-list 'magit-key-mode-groups
              `(ack
-               (man-page ,ack-executable)
+               (man-page ,(file-truename ack-executable))
                (actions
                 ("r" "Run" ack-menu-action))
                (switches
@@ -802,15 +798,25 @@ Color is used starting ack 1.94.")
                 ("-a" "All files" "--all")
                 ("-i" "Ignore case" "--ignore-case")
                 ("-n" "No recurse" "--no-recurse")
-                ("-f" "Only print file names" "--files-with-matches")
+                ("-fm" "Only print file names matched" "--files-with-matches")
+                ("-fs" "Only print file names searched" "-f")
                 ("-w" "Match whole word" "--word-regexp")
                 ("-q" "Literal search, no regex" "--literal"))
                (arguments
-                ("-m" "Match" "--match=" read-from-minibuffer)
-                ("-d" "Directory" "--directory=" read-directory-name)))
+                ("-m" "Match" "--match=" ack-menu-read-match)
+                ("-d" "Directory" "--directory=" read-directory-name)
+                ("-B" "Num context lines before" "--before-context=" read-from-minibuffer)
+                ("-A" "Num context lines after" "--after-context=" read-from-minibuffer)
+                ("-C" "Num context lines around" "--context=" read-from-minibuffer)))
              t)
 
 (defvar ack-menu-options '(("--ignore-case")))
+(defvar ack-menu-match-history nil)
+
+(defun ack-menu-read-match (prompt)
+  ;; To automatically insert the last match in the prompt, use this line
+  ;; (read-from-minibuffer prompt (car ack-menu-match-history) nil nil '(ack-menu-match-history . 1))
+  (read-from-minibuffer prompt nil nil nil 'ack-menu-match-history))
 
 (defun ack-get-current-dir ()
   (if (or (buffer-file-name)
@@ -852,10 +858,12 @@ Color is used starting ack 1.94.")
                                           (ack-guess-project-root)
                                           (error "Couldn't guess project root")))
                    ((cdr (assoc "--directory" args))))))
+    (when (assoc "-f" args)
+      (setq args (remove* "--match" args :key 'car :test 'string=)))
     (destructuring-bind (pass-through-args filtered-args)
         (ack-filter-args args (split-string "-c -l --directory"))
       (let ((dir (get-directory filtered-args))
-            (hard-coded-args '(("--color") ("--context" . "2"))))
+            (hard-coded-args '(("--color"))))
         (when (not (file-exists-p dir))
           (error "No such directory %s" dir))
         (list dir (ack-form-args-list (append hard-coded-args
