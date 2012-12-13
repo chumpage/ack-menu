@@ -416,6 +416,9 @@ This can be used in `ack-root-directory-functions'."
     (re-search-forward " +")
     (buffer-substring (point) (point-at-eol))))
 
+(defun ack-uses-line-color ()
+  (>= (string-to-number (ack-version-string)) 1.94))
+
 (defun ack-list-files (directory &rest arguments)
   (with-temp-buffer
     (let ((default-directory directory))
@@ -726,10 +729,11 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
 (defconst ack-font-lock-regexp-color-end "\\(\33\\[0m\\)")
 
 (defconst ack-font-lock-regexp-line
-  (concat "\\(" ack-font-lock-regexp-color-fg-begin "?\\)"
-          "\\([0-9]+\\)"
-          "\\(" ack-font-lock-regexp-color-end "?\\)"
-          "[:-]")
+  (let ((line-color? (if (ack-uses-line-color) "" "?")))
+    (concat "\\(" ack-font-lock-regexp-color-fg-begin line-color? "\\)"
+            "\\([0-9]+\\)"
+            "\\(" ack-font-lock-regexp-color-end line-color? "\\)"
+            "[:-]"))
   "Matches the line output from ack (with or without color).
 Color is used starting ack 1.94.")
 
