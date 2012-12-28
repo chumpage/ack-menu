@@ -76,6 +76,8 @@
 (require 'compile)
 (require 'magit)
 (require 'current-project)
+(require 'cl)
+(require 'ansi-color)
 
 (add-to-list 'debug-ignored-errors
              "^Moved \\(back before fir\\|past la\\)st match$")
@@ -331,12 +333,140 @@ This can be used in `ack-root-directory-functions'."
 (defun ack-sentinel (proc result)
   (when (eq (process-status proc) 'exit)
     (with-current-buffer (process-buffer proc)
+      (insert (ack-parse-sgr-sequences-finish 'ack-apply-faces))
       (let ((c (ack-count-matches)))
         (if (or (> c 0) (/= (buffer-size) 0))
             (when (eq ack-display-buffer 'after)
               (display-buffer (current-buffer)))
           (kill-buffer (current-buffer)))
         (message "Ack finished with %d match%s" c (if (eq c 1) "" "es"))))))
+
+(defvar ack-parse-sgr-context nil
+  "A dotted pair of the form (sgr-code . unfinished-string).
+Both values are strings. This is used to store unfinished
+colorized regions while parsing the ack output.")
+(make-variable-buffer-local 'ack-parse-sgr-context)
+
+(defun ack-parse-sgr-fragment (string &optional start)
+  "Returns a pair of the form (string . sgr-fragment)"
+  (let ((pos (string-match "\033" string (or start 0))))
+    (if (and pos (<= (- (length string) pos) 10))
+        `(,(substring string 0 pos) . ,(substring string pos))
+        `(,string . nil))))
+
+;; (assert (equal (ack-parse-sgr-fragment "abc123456789") '("abc" . "123456789")))
+;; (assert (eq (ack-parse-sgr-fragment "abc1234567890") '("abc1234567890" . nil)))
+
+(defun ack-parse-sgr-sequences (string fn)
+  "This function filters ansi escape codes (see
+http://en.wikipedia.org/wiki/ANSI_escape_code), specifically
+searching for Select Graphic Rendition (sgr) sequences. Ack
+color-codes certain parts of the output (file names, line
+numbers, and matches) using sgr sequences. By finding the sgr
+sequences we can easily extract the file names and line numbers
+of the matches, and apply Emacs faces to the output to colorize
+it however we want. Any ansi escape codes other than sgr
+sequences are removed from the string.
+
+This function takes a new STRING of ack process output, and a
+callback FN which is called with two parameters for every color
+coded string it finds: the string and the sgr color code (of the
+form `1;33m', or `30;43m', etc). The color code will have already
+been removed from the string. The callback function should return
+a string with the appropriate text properties added.
+
+ack-parse-sgr-sequences will return a string with ansi escape
+sequences removed, and text properties added to the sgr-colored
+portions of the string. The returned string may not represent the
+entire input string, as some of the input string may be processed
+during subsequent calls to ack-parse-sgr-sequences.
+
+This function uses ack-parse-sgr-context to store temporary
+parsing data between calls to ack-parse-sgr-sequences while
+processing ack process output. When the ack process is finished,
+ack-parse-sgr-sequences-finish must be called to finish
+processing the temporary parsing data and reset
+ack-parse-sgr-context.
+
+This function is inspired by ansi-color-apply, which
+unfortunately isn't generic enough for us to use. This function
+does however use two values defined in ansi-color.el:
+ansi-color-drop-regexp and ansi-color-regexp."
+  (let ((sgr-code (car ack-parse-sgr-context))
+        result)
+    ;; First prepend the leftover string from the previous call
+    (setq string (concat (or (cdr ack-parse-sgr-context) "")
+                         string))
+    ;; Strip unrecognized escape code sequences
+    (while (string-match ansi-color-drop-regexp string)
+        (setq string (replace-match "" nil nil string)))
+    ;; Process color escape code sequences
+    (let (pos)
+      (while (setq pos (string-match ansi-color-regexp string))
+        (let ((new-sgr-code (match-string 1 string)))
+          ;; Remove the escape code sequence
+          (setq string (replace-match "" nil nil string))
+          (if (find new-sgr-code '("0m" "m") :test 'string=)
+              ;; If we're closing a colorized string, call the callback,
+              ;; save the result, and chop off the beginning of string
+              (when sgr-code
+                (push (funcall fn (substring string 0 pos) sgr-code) result)
+                (setq string (substring string pos))
+                (setq sgr-code nil))
+              ;; If we encountered the start of a new sgr code, and we're not
+              ;; currently parsing a colorized string, save the state for the
+              ;; new coloration. If we're already parsing a colorized string,
+              ;; just ignore the extra escape sequence.
+              (when (null sgr-code)
+                (push (substring string 0 pos) result)
+                (setq string (substring string pos))
+                (setq sgr-code new-sgr-code))))))
+    ;; Set up our context for the next call
+    (if sgr-code
+        ;; We're currently processing a colored string. The context is the
+        ;; sgr-code and the leftover string.
+        (setq ack-parse-sgr-context `(,sgr-code . ,string))
+        ;; Check for a possible start of an sgr sequence. Save the fragment and
+        ;; following text as context for the next call. Anything before the
+        ;; fragment isn't colorized and can be added to the return value.
+        (destructuring-bind (unencoded-string . fragment) (ack-parse-sgr-fragment string)
+          (setq ack-parse-sgr-context `(nil . ,fragment))
+          (push unencoded-string result)))
+    ;; Reverse the list of result strings as our return value
+    (apply 'concat (nreverse result))))
+
+(defun ack-parse-sgr-sequences-finish (fn)
+  "This function finishes processing any remaining ack output
+remaining from previous calls to ack-parse-sgr-sequences. It
+takes a callback function that should work the same as the
+callback supplied to ack-parse-sgr-sequences. This function
+returns a string representing the last of the ack process
+output."
+  (let ((sgr-code (car ack-parse-sgr-context))
+        (string (cdr ack-parse-sgr-context)))
+    (setq ack-parse-sgr-context nil)
+    (if (and sgr-code string)
+        (funcall fn string sgr-code)
+        (or string ""))))
+
+(defun ack-apply-faces (string sgr-code)
+  "The function passed to ack-parse-sgr-sequences to add our text
+properties. The text properties that may be added:
+  - font-lock-face: The face to use for the text. One of
+    ack-line, ack-file, or ack-match.
+  - ack-line: The line number (as a string).
+  - ack-file: The file name.
+  - ack-match: Set to t if this string represents an ack match.
+  - mouse-face: Will be set to `highlight' for matches.
+  - follow-line: Will be set to t for matches."
+  (let ((props (cond ((string= sgr-code "1;33m") `(font-lock-face ack-line ack-line ,string))
+                     ((string= sgr-code "1;32m") `(font-lock-face ack-file ack-file ,string))
+                     ((string= sgr-code "30;43m") `(font-lock-face ack-match
+                                                    ack-match t
+                                                    mouse-face highlight
+                                                    follow-link t)))))
+    (add-text-properties 0 (length string) props string))
+  string)
 
 (defun ack-filter (proc output)
   (let ((buffer (process-buffer proc))
@@ -346,9 +476,7 @@ This can be used in `ack-root-directory-functions'."
       (with-current-buffer buffer
         (save-excursion
           (goto-char (setq beg (point-max)))
-          (insert output)
-          ;; Error properties are done by font-lock.
-          (font-lock-fontify-region beg (point-max))))
+          (insert (ack-parse-sgr-sequences output 'ack-apply-faces))))
       (ack-abort))))
 
 (defun ack-abort ()
@@ -392,7 +520,7 @@ This can be used in `ack-root-directory-functions'."
       (setq buffer-read-only t
             default-directory directory)
       (set (make-local-variable 'ack-buffer--rerun-args) rerun-args)
-      (font-lock-fontify-buffer)
+      (font-lock-mode)
       (when (eq ack-display-buffer t)
         (display-buffer (current-buffer))))
     (setq ack-process
@@ -563,20 +691,6 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
 
 ;;; text utilities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun ack-visible-distance (beg end)
-  "Determine the number of visible characters between BEG and END."
-  (let ((offset 0)
-        next)
-    ;; Subtract invisible text
-    (when (get-text-property beg 'invisible)
-      (setq beg (next-single-property-change beg 'invisible)))
-    (while (and beg (< beg end))
-      (if (setq next (next-single-property-change beg 'invisible))
-          (setq offset (+ offset (- (min next end) beg))
-                beg (next-single-property-change next 'invisible))
-        (setq beg nil)))
-    offset))
-
 (defun ack-previous-property-value (property pos)
   "Find the value of PROPERTY at or somewhere before POS."
   (or (get-text-property pos property)
@@ -657,9 +771,8 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
 (defun ack-create-marker (pos end &optional force)
   (let ((file (ack-previous-property-value 'ack-file pos))
         (line (ack-previous-property-value 'ack-line pos))
-        (offset (ack-visible-distance
-                 (or (previous-single-property-change pos 'ack-line) 0)
-                 pos))
+        (offset (- pos (let ((line-pos (previous-single-property-change pos 'ack-line)))
+                         (if line-pos (1+ line-pos) 0))))
         buffer)
     (if force
         (or (and file
@@ -674,7 +787,7 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
       (with-current-buffer buffer
         (save-excursion
           (ack--move-to-line (string-to-number line))
-          (copy-marker (+ (point) offset -1)))))))
+          (copy-marker (+ (point) offset)))))))
 
 (defun ack--move-to-line (line)
   (save-restriction
@@ -704,7 +817,7 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
       (unless (and marker (marker-buffer marker))
         (setq marker (ack-create-marker msg msg-end t))
         (add-text-properties msg msg-end (list 'ack-marker marker)))
-      (set-marker end (+ marker (ack-visible-distance msg msg-end))
+      (set-marker end (+ marker (- msg-end msg))
                   (marker-buffer marker))
       (compilation-goto-locus msg marker end)
       (set-marker msg nil)
@@ -716,7 +829,7 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
   (let ((keymap (make-sparse-keymap)))
     (define-key keymap [mouse-2] 'ack-find-match)
     (define-key keymap "\C-m" 'ack-find-match)
-    (define-key keymap "n" 'ack-next-match)
+    (define-key keymap "n" 'ack-next-match) ; next-error-no-select
     (define-key keymap "p" 'ack-previous-match)
     (define-key keymap "\M-n" 'ack-next-file)
     (define-key keymap "\M-p" 'ack-previous-file)
@@ -724,68 +837,13 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
     (define-key keymap "r" 'ack-again)
     keymap))
 
-(defconst ack-font-lock-regexp-color-fg-begin "\\(\33\\[1;..?m\\)")
-(defconst ack-font-lock-regexp-color-bg-begin "\\(\33\\[30;..m\\)")
-(defconst ack-font-lock-regexp-color-end "\\(\33\\[0m\\)")
-
-(defconst ack-font-lock-regexp-line
-  (let ((line-color? (if (ack-uses-line-color) "" "?")))
-    (concat "\\(" ack-font-lock-regexp-color-fg-begin line-color? "\\)"
-            "\\([0-9]+\\)"
-            "\\(" ack-font-lock-regexp-color-end line-color? "\\)"
-            "[:-]"))
-  "Matches the line output from ack (with or without color).
-Color is used starting ack 1.94.")
-
-(defvar ack-font-lock-keywords
-  `(("^--" . 'ack-separator)
-    ;; file and line
-    (,(concat "^" ack-font-lock-regexp-color-fg-begin
-              "\\(.*?\\)" ack-font-lock-regexp-color-end
-              "[:-]" ack-font-lock-regexp-line)
-     (1 '(face nil invisible t))
-     (2 `(face ack-file ack-file ,(match-string-no-properties 2)))
-     (3 '(face nil invisible t))
-     (4 '(face nil invisible t))
-     (6 `(face ack-line ack-line ,(match-string-no-properties 6)))
-     (7 '(face nil invisible t) nil optional))
-    ;; lines
-    (,(concat "^" ack-font-lock-regexp-line)
-     (1 '(face nil invisible t))
-     (3 `(face ack-line ack-line ,(match-string-no-properties 3)))
-     (5 '(face nil invisible t) nil optional))
-    ;; file
-    (,(concat "^" ack-font-lock-regexp-color-fg-begin
-              "\\(.*?\\)" ack-font-lock-regexp-color-end "$")
-     (1 '(face nil invisible t))
-     (2 `(face ack-file ack-file ,(match-string-no-properties 2)))
-     (3 '(face nil invisible t)))
-    ;; matches
-    (,(concat ack-font-lock-regexp-color-bg-begin
-              "\\(.*?\\)"
-              ack-font-lock-regexp-color-end)
-     (1 '(face nil invisible t))
-     (0 `(face ack-match
-          ack-marker ,(ack-create-marker (match-beginning 2) (match-end 2))
-          ack-match t
-          mouse-face highlight
-          follow-link t))
-     (3 '(face nil invisible t)))
-    ;; noise
-    ("\\(\33\\[\\(0m\\|K\\)\\)"
-     (0 '(face nil invisible t)))))
-
 (define-derived-mode ack-mode nil "ack"
   "Major mode for ack output."
-  font-lock-defaults
-  (setq font-lock-defaults
-        (list ack-font-lock-keywords t))
   (set (make-local-variable 'font-lock-extra-managed-props)
        '(mouse-face follow-link ack-line ack-file ack-marker ack-match))
   (make-local-variable 'overlay-arrow-position)
   (set (make-local-variable 'overlay-arrow-string) "")
 
-  (font-lock-fontify-buffer)
   (use-local-map ack-mode-map)
 
   (setq next-error-function 'ack-next-error-function
