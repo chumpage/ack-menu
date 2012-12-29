@@ -804,7 +804,6 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
     (let ((marker (get-text-property pos 'ack-marker))
           (msg (copy-marker pos))
           (msg-end (ack-property-end pos 'ack-match))
-          (compilation-context-lines ack-context)
           (inhibit-read-only t)
           (end (make-marker)))
       (setq ack-error-pos pos)
