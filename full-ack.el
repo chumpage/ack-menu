@@ -74,7 +74,7 @@
 
 (eval-when-compile (require 'cl))
 (require 'compile)
-(require 'magit)
+(require 'mag-menu)
 (require 'current-project)
 (require 'cl)
 (require 'ansi-color)
@@ -848,28 +848,27 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
   (setq next-error-function 'ack-next-error-function
         ack-error-pos nil))
 
-(add-to-list 'magit-key-mode-groups
-             `(ack
-               (man-page ,(file-truename ack-executable))
-               (actions
-                ("r" "Run" ack-menu-action))
-               (switches
-                ("-c" "Current project dir" "-c")
-                ("-l" "Local project dir" "-l")
-                ("-a" "All files" "--all")
-                ("-i" "Ignore case" "--ignore-case")
-                ("-n" "No recurse" "--no-recurse")
-                ("-fm" "Only print file names matched" "--files-with-matches")
-                ("-fs" "Only print file names searched" "-f")
-                ("-w" "Match whole word" "--word-regexp")
-                ("-q" "Literal search, no regex" "--literal"))
-               (arguments
-                ("-m" "Match" "--match=" ack-menu-read-match)
-                ("-d" "Directory" "--directory=" read-directory-name)
-                ("-B" "Num context lines before" "--before-context=" read-from-minibuffer)
-                ("-A" "Num context lines after" "--after-context=" read-from-minibuffer)
-                ("-C" "Num context lines around" "--context=" read-from-minibuffer)))
-             t)
+(defvar ack-menu-group
+  `(ack
+    (man-page ,(file-name-nondirectory (file-truename ack-executable)))
+    (actions
+     ("r" "Run" ack-menu-action))
+    (switches
+     ("-c" "Current project dir" "-c")
+     ("-l" "Local project dir" "-l")
+     ("-a" "All files" "--all")
+     ("-i" "Ignore case" "--ignore-case")
+     ("-n" "No recurse" "--no-recurse")
+     ("-fm" "Only print file names matched" "--files-with-matches")
+     ("-fs" "Only print file names searched" "-f")
+     ("-w" "Match whole word" "--word-regexp")
+     ("-q" "Literal search, no regex" "--literal"))
+    (arguments
+     ("-m" "Match" "--match=" ack-menu-read-match)
+     ("-d" "Directory" "--directory=" read-directory-name)
+     ("-B" "Num context lines before" "--before-context=" read-from-minibuffer)
+     ("-A" "Num context lines after" "--after-context=" read-from-minibuffer)
+     ("-C" "Num context lines around" "--context=" read-from-minibuffer))))
 
 (defvar ack-menu-options '(("--ignore-case")))
 (defvar ack-menu-match-history nil)
@@ -895,7 +894,7 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
     (setf (cdr (assoc "--directory" args)) (ack-get-current-dir))
     (when (null (assoc "--match" args))
       (push `("--match" . ,(or (word-at-point) "search")) args))
-    (magit-key-mode 'ack args)))
+    (mag-menu ack-menu-group args)))
 
 (defun ack-filter-args (args args-to-remove)
   (let* ((args-to-remove (mapcar (lambda (arg) (cons arg (cdr (assoc arg args)))) args-to-remove))
@@ -933,7 +932,7 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
 
 (defun ack-menu-action ()
   (interactive)
-  (setq ack-menu-options magit-custom-options-alist)
+  (setq ack-menu-options mag-menu-custom-options)
   (destructuring-bind (dir args) (ack-process-args ack-menu-options)
     (apply 'ack-run-impl (cons dir args))))
 
