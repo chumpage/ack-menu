@@ -893,7 +893,10 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
       (push '("--directory") args))
     (setf (cdr (assoc "--directory" args)) (ack-get-current-dir))
     (when (null (assoc "--match" args))
-      (push `("--match" . ,(or (word-at-point) "search")) args))
+      (push `("--match" . ,(if (word-at-point)
+                               (substring-no-properties (word-at-point))
+                               "search"))
+            args))
     (mag-menu ack-menu-group args)))
 
 (defun ack-filter-args (args args-to-remove)
