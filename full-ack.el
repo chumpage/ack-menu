@@ -121,7 +121,7 @@ that that should be searched in addition to the type defined in
 (defcustom ack-ignore-case 'smart
   "*Determines whether `ack' ignores the search case.
 Special value 'smart enables ack option \"smart-case\"."
-  :group 'full-ackk
+  :group 'full-ack
   :type '(choice (const :tag "Case sensitive" nil)
                  (const :tag "Smart" 'smart)
                  (const :tag "Ignore case" t)))
