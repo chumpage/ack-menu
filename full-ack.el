@@ -75,7 +75,6 @@
 (eval-when-compile (require 'cl))
 (require 'compile)
 (require 'mag-menu)
-(require 'current-project)
 (require 'cl)
 (require 'ansi-color)
 
@@ -185,6 +184,12 @@ nil, the directory is never confirmed."
   :type '(choice (const :tag "Don't prompt" nil)
                  (const :tag "Don't Prompt when guessed " unless-guessed)
                  (const :tag "Prompt" t)))
+
+(defcustom ack-current-project-directory nil
+  "*The current project directory, which will be available in the
+menu as a switch."
+  :group 'full-ack
+  :type 'directory)
 
 ;;; faces ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -914,8 +919,8 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
 
 (defun ack-process-args (args)
   (labels ((get-directory (args)
-             (cond ((assoc "-c" args) (if (current-project-directory)
-                                          (current-project-directory)
+             (cond ((assoc "-c" args) (if ack-current-project-directory
+                                          ack-current-project-directory
                                           (error "No current project directory")))
                    ((assoc "-l" args) (if (ack-guess-project-root)
                                           (ack-guess-project-root)
