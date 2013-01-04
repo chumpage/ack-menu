@@ -855,7 +855,9 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
 
 (defvar ack-menu-group
   `(ack
-    (man-page ,(file-name-nondirectory (file-truename ack-executable)))
+    (man-page ,(if (null ack-executable)
+                   nil
+                   (file-name-nondirectory (file-truename ack-executable))))
     (actions
      ("r" "Run" ack-menu-action))
     (switches
