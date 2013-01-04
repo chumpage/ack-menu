@@ -87,7 +87,8 @@
   :group 'tools
   :group 'matching)
 
-(defcustom ack-executable (executable-find "ack")
+(defcustom ack-executable (or (executable-find "ack")
+                              (executable-find "ack-grep"))
   "*The location of the ack executable."
   :group 'full-ack
   :type 'file)
