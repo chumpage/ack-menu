@@ -1,13 +1,12 @@
-;;; full-ack.el --- a front-end for ack
-;;; -*- lexical-binding: t -*-
+;;; ack-menu.el --- A menu-based front-end for ack
 ;;
 ;; Copyright (C) 2009-2011 Nikolaj Schumacher
 ;;
-;; Author: Nikolaj Schumacher <bugs * nschum de>
-;; Version: 0.2.3
+;; Author: Steven Thomas
+;; Created: 06 Jan 2013
+;; Version: 0.1.0
 ;; Keywords: tools, matching
-;; URL: http://nschum.de/src/emacs/full-ack/
-;; Compatibility: GNU Emacs 22.x, GNU Emacs 23.x, GNU Emacs 24.x
+;; URL: https://github.com/chumpage/ack-menu
 ;;
 ;; This file is NOT part of GNU Emacs.
 ;;
@@ -26,49 +25,12 @@
 ;;
 ;;; Commentary:
 ;;
-;; ack is a tool like grep, aimed at programmers with large trees of
-;; heterogeneous source code.
-;; It is available at <http://betterthangrep.com/>.
+;; Ack-menu is a fork of Nikolaj Schumacher's full-ack. Instead of
+;; offering a set of emacs variables that control what command line
+;; options are passed to ack, it uses mag-menu.el to provide an
+;; intuitive menu-based front-end to ack.
 ;;
-;; Add the following to your .emacs:
-;;
-;; (add-to-list 'load-path "/path/to/full-ack")
-;; (autoload 'ack-same "full-ack" nil t)
-;; (autoload 'ack "full-ack" nil t)
-;; (autoload 'ack-find-same-file "full-ack" nil t)
-;; (autoload 'ack-find-file "full-ack" nil t)
-;;
-;; Run `ack' to search for all files and `ack-same' to search for files of the
-;; same type as the current buffer.
-;;
-;; `next-error' and `previous-error' can be used to jump to the matches.
-;;
-;; `ack-find-file' and `ack-find-same-file' use ack to list the files in the
-;; current project.  It's a convenient, though slow, way of finding files.
-;;
-;;; Change Log:
-;;
-;;    Added `ack-next-file` and `ack-previous-file`.
-;;
-;; 2011-12-16 (0.2.3)
-;;    Added `ack-again' (bound to "g" in search buffers).
-;;    Added default value for search.
-;;
-;; 2010-11-17 (0.2.2)
-;;    Made changes for ack 1.92.
-;;    Made `ack-guess-project-root' Windows friendly.
-;;
-;; 2009-04-13 (0.2.1)
-;;    Added `ack-next-match' and `ack-previous-match'.
-;;    Fixed mouse clicking and let it move next-error position.
-;;
-;; 2009-04-06 (0.2)
-;;    Added 'unless-guessed value for `ack-prompt-for-directory'.
-;;    Added `ack-list-files', `ack-find-file' and `ack-find-same-file'.
-;;    Fixed regexp toggling.
-;;
-;; 2009-04-05 (0.1)
-;;    Initial release.
+;; The main function is ack-menu.
 ;;
 ;;; Code:
 
@@ -82,7 +44,7 @@
              "^Moved \\(back before fir\\|past la\\)st match$")
 (add-to-list 'debug-ignored-errors "^File .* not found$")
 
-(defgroup full-ack nil
+(defgroup ack-menu nil
   "A front-end for ack."
   :group 'tools
   :group 'matching)
@@ -90,12 +52,12 @@
 (defcustom ack-executable (or (executable-find "ack")
                               (executable-find "ack-grep"))
   "*The location of the ack executable."
-  :group 'full-ack
+  :group 'ack-menu
   :type 'file)
 
 (defcustom ack-arguments nil
   "*The arguments to use when running ack."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(repeat (string)))
 
 (defcustom ack-mode-type-alist nil
@@ -103,7 +65,7 @@
 This overrides values in `ack-mode-default-type-alist'.  The car in each
 list element is a major mode, the rest are strings representing values of
 the --type argument used by `ack-same'."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(repeat (cons (symbol :tag "Major mode")
                        (repeat (string :tag "ack type")))))
 
@@ -113,7 +75,7 @@ This overrides values in `ack-mode-default-extension-alist'.  The car in
 each list element is a major mode, the rest is a list of file extensions
 that that should be searched in addition to the type defined in
 `ack-mode-type-alist' by `ack-same'."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(repeat (cons (symbol :tag "Major mode")
                        (repeat :tag "File extensions"
                                (string :tag "extension")))))
@@ -121,7 +83,7 @@ that that should be searched in addition to the type defined in
 (defcustom ack-ignore-case 'smart
   "*Determines whether `ack' ignores the search case.
 Special value 'smart enables ack option \"smart-case\"."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(choice (const :tag "Case sensitive" nil)
                  (const :tag "Smart" 'smart)
                  (const :tag "Ignore case" t)))
@@ -129,32 +91,32 @@ Special value 'smart enables ack option \"smart-case\"."
 (defcustom ack-search-regexp t
   "*Determines whether `ack' should default to regular expression search.
 Giving a prefix arg to `ack' toggles this option."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(choice (const :tag "Literal" nil)
                  (const :tag "Regular expression" t)))
 
 (defcustom ack-display-buffer t
   "*Determines whether `ack' should display the result buffer.
 Special value 'after means display the buffer only after a successful search."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(choice (const :tag "Don't display" nil)
                  (const :tag "Display immediately" t)
                  (const :tag "Display when done" 'after)))
 
 (defcustom ack-context 2
   "*The number of context lines for `ack'"
-  :group 'full-ack
+  :group 'ack-menu
   :type 'integer)
 
 (defcustom ack-heading t
   "*Determines whether `ack' results should be grouped by file."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(choice (const :tag "No heading" nil)
                  (const :tag "Heading" t)))
 
 (defcustom ack-use-environment t
   "*Determines whether `ack' should use access .ackrc and ACK_OPTIONS."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(choice (const :tag "Ignore environment" nil)
                  (const :tag "Use environment" t)))
 
@@ -163,7 +125,7 @@ Special value 'after means display the buffer only after a successful search."
 These functions are called until one returns a directory.  If successful,
 `ack' is run from that directory instead of `default-directory'.  The
 directory is verified by the user depending on `ack-promtp-for-directory'."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(repeat function))
 
 (defcustom ack-project-root-file-patterns
@@ -173,7 +135,7 @@ directory is verified by the user depending on `ack-promtp-for-directory'."
 Each element is a regular expression.  If a file matching either element is
 found in a directory, that directory is assumed to be the project root by
 `ack-guess-project-root'."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(repeat (string :tag "Regular expression")))
 
 (defcustom ack-prompt-for-directory nil
@@ -181,7 +143,7 @@ found in a directory, that directory is assumed to be the project root by
 If this is 'unless-guessed, the value determined by
 `ack-root-directory-functions' is used without confirmation.  If it is
 nil, the directory is never confirmed."
-  :group 'full-ack
+  :group 'ack-menu
   :type '(choice (const :tag "Don't prompt" nil)
                  (const :tag "Don't Prompt when guessed " unless-guessed)
                  (const :tag "Prompt" t)))
@@ -189,7 +151,7 @@ nil, the directory is never confirmed."
 (defcustom ack-current-project-directory nil
   "*The current project directory, which will be available in the
 menu as a switch."
-  :group 'full-ack
+  :group 'ack-menu
   :type 'directory)
 
 ;;; faces ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -197,26 +159,26 @@ menu as a switch."
 (defface ack-separator
   '((default (:foreground "gray50")))
   "*Face for the group separator \"--\" in `ack' output."
-  :group 'full-ack)
+  :group 'ack-menu)
 
 (defface ack-file
   '((((background dark)) (:foreground "green1"))
     (((background light)) (:foreground "green4")))
   "*Face for file names in `ack' output."
-  :group 'full-ack)
+  :group 'ack-menu)
 
 (defface ack-line
   '((((background dark)) (:foreground "LightGoldenrod"))
     (((background dark)) (:foreground "DarkGoldenrod")))
   "*Face for line numbers in `ack' output."
-  :group 'full-ack)
+  :group 'ack-menu)
 
 (defface ack-match
   '((default (:foreground "black"))
     (((background dark)) (:background "yellow"))
     (((background light)) (:background "yellow")))
   "*Face for matched text in `ack' output."
-  :group 'full-ack)
+  :group 'ack-menu)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -280,8 +242,8 @@ menu as a switch."
 
 (defun ack-create-type (extensions)
   (list "--type-set"
-        (concat "full-ack-custom-type=" (mapconcat 'identity extensions ","))
-        "--type" "full-ack-custom-type"))
+        (concat "ack-menu-custom-type=" (mapconcat 'identity extensions ","))
+        "--type" "ack-menu-custom-type"))
 
 (defun ack-type-for-major-mode (mode)
   "Return the --type and --type-set arguments for major mode MODE."
@@ -947,5 +909,10 @@ DIRECTORY is the root directory.  If called interactively, it is determined by
   (destructuring-bind (dir args) (ack-process-args ack-menu-options)
     (apply 'ack-run-impl (cons dir args))))
 
-(provide 'full-ack)
-;;; full-ack.el ends here
+(provide 'ack-menu)
+
+;; Local Variables:
+;; lexical-binding: t
+;; End:
+
+;;; ack-menu.el ends here
