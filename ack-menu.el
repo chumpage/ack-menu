@@ -34,7 +34,6 @@
 ;;
 ;;; Code:
 
-(eval-when-compile (require 'cl))
 (require 'compile)
 (require 'mag-menu)
 (require 'cl)
@@ -267,6 +266,7 @@ This can be used in `ack-root-directory-functions'."
     c))
 
 (defun ack-sentinel (proc result)
+  result ;; Use result just to silence the compiler warning
   (when (eq (process-status proc) 'exit)
     (with-current-buffer (process-buffer proc)
       (insert (ack-parse-sgr-sequences-finish 'ack-apply-faces))
@@ -406,12 +406,11 @@ properties. The text properties that may be added:
 
 (defun ack-filter (proc output)
   (let ((buffer (process-buffer proc))
-        (inhibit-read-only t)
-        beg)
+        (inhibit-read-only t))
     (if (buffer-live-p buffer)
       (with-current-buffer buffer
         (save-excursion
-          (goto-char (setq beg (point-max)))
+          (goto-char (point-max))
           (insert (ack-parse-sgr-sequences output 'ack-apply-faces))))
       (ack-abort))))
 
@@ -603,6 +602,7 @@ properties. The text properties that may be added:
     (setq arg (1- arg)))
   (assert (> arg 0))
   (dotimes (i arg)
+    i ;; Use i just to silence the compiler warning
     (setq pos (next-single-property-change pos marker))
     (unless pos
       (error (format "Moved past last %s" marker-name))))
@@ -612,6 +612,7 @@ properties. The text properties that may be added:
 (defun ack-previous-marker (pos arg marker marker-name)
   (assert (> arg 0))
   (dotimes (i (* 2 arg))
+    i ;; Use i just to silence the compiler warning
     (setq pos (previous-single-property-change pos marker))
     (unless pos
       (error (format "Moved back before first %s" marker-name))))
@@ -647,7 +648,7 @@ properties. The text properties that may be added:
                       (ack-previous-match ack-error-pos (- arg))
                     (ack-next-match ack-error-pos arg))))
 
-(defun ack-create-marker (pos end &optional force)
+(defun ack-create-marker (pos &optional force)
   (let ((file (ack-previous-property-value 'ack-file pos))
         (line (ack-previous-property-value 'ack-line pos))
         (offset (- pos (let ((line-pos (previous-single-property-change pos 'ack-line)))
@@ -693,7 +694,7 @@ properties. The text properties that may be added:
           (setq overlay-arrow-position (copy-marker bol))))
 
       (unless (and marker (marker-buffer marker))
-        (setq marker (ack-create-marker msg msg-end t))
+        (setq marker (ack-create-marker msg t))
         (add-text-properties msg msg-end (list 'ack-marker marker)))
       (set-marker end (+ marker (- msg-end msg))
                   (marker-buffer marker))
@@ -794,14 +795,14 @@ properties. The text properties that may be added:
           args))
 
 (defun ack-process-args (args)
-  (labels ((get-directory (args)
-             (cond ((assoc "-c" args) (if ack-current-project-directory
-                                          ack-current-project-directory
-                                          (error "No current project directory")))
-                   ((assoc "-l" args) (if (ack-guess-project-root)
-                                          (ack-guess-project-root)
-                                          (error "Couldn't guess project root")))
-                   ((cdr (assoc "--directory" args))))))
+  (flet ((get-directory (args)
+           (cond ((assoc "-c" args) (if ack-current-project-directory
+                                        ack-current-project-directory
+                                        (error "No current project directory")))
+                 ((assoc "-l" args) (if (ack-guess-project-root)
+                                        (ack-guess-project-root)
+                                        (error "Couldn't guess project root")))
+                 ((cdr (assoc "--directory" args))))))
     (when (assoc "-f" args)
       (setq args (remove* "--match" args :key 'car :test 'string=)))
     (destructuring-bind (pass-through-args filtered-args)
