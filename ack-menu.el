@@ -80,21 +80,6 @@ that that should be searched in addition to the type defined in
                        (repeat :tag "File extensions"
                                (string :tag "extension")))))
 
-(defcustom ack-ignore-case 'smart
-  "*Determines whether `ack' ignores the search case.
-Special value 'smart enables ack option \"smart-case\"."
-  :group 'ack-menu
-  :type '(choice (const :tag "Case sensitive" nil)
-                 (const :tag "Smart" 'smart)
-                 (const :tag "Ignore case" t)))
-
-(defcustom ack-search-regexp t
-  "*Determines whether `ack' should default to regular expression search.
-Giving a prefix arg to `ack' toggles this option."
-  :group 'ack-menu
-  :type '(choice (const :tag "Literal" nil)
-                 (const :tag "Regular expression" t)))
-
 (defcustom ack-display-buffer t
   "*Determines whether `ack' should display the result buffer.
 Special value 'after means display the buffer only after a successful search."
@@ -102,23 +87,6 @@ Special value 'after means display the buffer only after a successful search."
   :type '(choice (const :tag "Don't display" nil)
                  (const :tag "Display immediately" t)
                  (const :tag "Display when done" 'after)))
-
-(defcustom ack-context 2
-  "*The number of context lines for `ack'"
-  :group 'ack-menu
-  :type 'integer)
-
-(defcustom ack-heading t
-  "*Determines whether `ack' results should be grouped by file."
-  :group 'ack-menu
-  :type '(choice (const :tag "No heading" nil)
-                 (const :tag "Heading" t)))
-
-(defcustom ack-use-environment t
-  "*Determines whether `ack' should use access .ackrc and ACK_OPTIONS."
-  :group 'ack-menu
-  :type '(choice (const :tag "Ignore environment" nil)
-                 (const :tag "Use environment" t)))
 
 (defcustom ack-root-directory-functions '(ack-guess-project-root)
   "*A list of functions used to find the ack base directory.
@@ -456,19 +424,6 @@ properties. The text properties that may be added:
 (defun ack-option (name enabled)
   (format "--%s%s" (if enabled "" "no") name))
 
-(defun ack-arguments-from-options (regexp)
-  (let ((arguments (list "--color"
-                         (ack-option "smart-case" (eq ack-ignore-case 'smart))
-                         (ack-option "heading" ack-heading)
-                         (ack-option "env" ack-use-environment))))
-    (unless ack-ignore-case
-      (push "-i" arguments))
-    (unless regexp
-      (push "--literal" arguments))
-    (when (and ack-context (/= ack-context 0))
-      (push (format "--context=%d" ack-context) arguments))
-    arguments))
-
 (defun ack-run-impl (directory &rest arguments)
   "Run ack in DIRECTORY with ARGUMENTS."
   (ack-abort)
@@ -496,13 +451,6 @@ properties. The text properties that may be added:
     (set-process-sentinel ack-process 'ack-sentinel)
     (set-process-query-on-exit-flag ack-process nil)
     (set-process-filter ack-process 'ack-filter)))
-
-(defun ack-run (directory regexp &rest arguments)
-  "Run ack in DIRECTORY with ARGUMENTS."
-  (setq arguments (append ack-arguments
-                          (nconc (ack-arguments-from-options regexp)
-                                 arguments)))
-  (ack-run-impl directory arguments))
 
 (defun ack-version-string ()
   "Return the ack version string."
@@ -574,47 +522,10 @@ properties. The text properties that may be added:
 (defun ack-xor (a b)
   (if a (not b) b))
 
-(defun ack-interactive ()
-  "Return the (interactive) arguments for `ack' and `ack-same'"
-  (let ((regexp (ack-xor current-prefix-arg ack-search-regexp)))
-    (list (ack--read regexp)
-          regexp
-          (ack-read-dir))))
-
 (defun ack-type ()
   (or (ack-type-for-major-mode major-mode)
       (when buffer-file-name
         (ack-create-type (list (file-name-extension buffer-file-name))))))
-
-;;;###autoload
-(defun ack-same (pattern &optional regexp directory)
-  "Run ack with --type matching the current `major-mode'.
-The types of files searched are determined by `ack-mode-type-alist' and
-`ack-mode-extension-alist'.  If no type is configured the buffer's file
-extension is used for the search.
-PATTERN is interpreted as a regular expression, iff REGEXP is non-nil.  If
-called interactively, the value of REGEXP is determined by `ack-search-regexp'.
-A prefix arg toggles that value.
-DIRECTORY is the root directory.  If called interactively, it is determined by
-`ack-project-root-file-patterns'.  The user is only prompted, if
-`ack-prompt-for-directory' is set."
-  (interactive (ack-interactive))
-  (let ((type (ack-type)))
-    (if type
-        (apply 'ack-run directory regexp (append type (list pattern)))
-      (ack pattern regexp directory))))
-
-;;;###autoload
-(defun ack (pattern &optional regexp directory)
-  "Run ack.
-PATTERN is interpreted as a regular expression, iff REGEXP is non-nil.  If
-called interactively, the value of REGEXP is determined by `ack-search-regexp'.
-A prefix arg toggles that value.
-DIRECTORY is the root directory.  If called interactively, it is determined by
-`ack-project-root-file-patterns'.  The user is only prompted, if
-`ack-prompt-for-directory' is set."
-  (interactive (ack-interactive))
-  (ack-run directory regexp pattern))
 
 (defun ack-read-file (prompt choices)
   (if ido-mode
