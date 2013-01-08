@@ -769,6 +769,8 @@ properties. The text properties that may be added:
       (file-name-as-directory (getenv "HOME"))))
 
 (defun ack-menu ()
+  "Invoke the ack menu. When finished, ack will be run with the
+specified options."
   (interactive)
   (let ((args (copy-tree ack-menu-options)))
     (when (null (assoc "--directory" args))
