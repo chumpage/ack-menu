@@ -3,10 +3,12 @@
 ;; Copyright (C) 2009-2011 Nikolaj Schumacher
 ;;
 ;; Author: Steven Thomas
+;;         Nikolaj Schumacher
 ;; Created: 06 Jan 2013
 ;; Version: 0.1.0
-;; Keywords: tools, matching
+;; Keywords: tools matching convenience
 ;; URL: https://github.com/chumpage/ack-menu
+;; Package-Requires: ((mag-menu "0.1.0"))
 ;;
 ;; This file is NOT part of GNU Emacs.
 ;;
