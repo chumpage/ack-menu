@@ -40,6 +40,7 @@
 (require 'mag-menu)
 (require 'cl)
 (require 'ansi-color)
+(require 'thingatpt)
 
 (add-to-list 'debug-ignored-errors
              "^Moved \\(back before fir\\|past la\\)st match$")
