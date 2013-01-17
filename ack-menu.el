@@ -813,7 +813,7 @@ specified options."
     (destructuring-bind (pass-through-args filtered-args)
         (ack-filter-args args (split-string "-c -l --directory"))
       (let ((dir (get-directory filtered-args))
-            (hard-coded-args '(("--color"))))
+            (hard-coded-args '(("--color") ("--nopager"))))
         (when (not (file-exists-p dir))
           (error "No such directory %s" dir))
         (list dir (ack-form-args-list (append hard-coded-args
