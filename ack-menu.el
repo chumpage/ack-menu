@@ -784,7 +784,8 @@ specified options."
                                (substring-no-properties (word-at-point))
                                "search"))
             args))
-    (mag-menu ack-menu-group args)))
+    (mag-menu ack-menu-group args)
+    (mag-menu-add-argument ack-menu-group "--match=" 'ack-menu-read-match)))
 
 (defun ack-filter-args (args args-to-remove)
   (let* ((args-to-remove (mapcar (lambda (arg) (cons arg (cdr (assoc arg args)))) args-to-remove))
