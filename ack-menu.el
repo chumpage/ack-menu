@@ -771,6 +771,7 @@ properties. The text properties that may be added:
       default-directory
       (file-name-as-directory (getenv "HOME"))))
 
+;;;###autoload
 (defun ack-menu ()
   "Invoke the ack menu. When finished, ack will be run with the
 specified options."
