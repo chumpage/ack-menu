@@ -822,9 +822,9 @@ specified options."
                                               ack-arguments
                                               pass-through-args)))))))
 
-(defun ack-menu-action ()
+(defun ack-menu-action (options)
   (interactive)
-  (setq ack-menu-options mag-menu-custom-options)
+  (setq ack-menu-options options)
   (destructuring-bind (dir args) (ack-process-args ack-menu-options)
     (apply 'ack-run-impl (cons dir args))))
 
