@@ -124,6 +124,11 @@ menu as a switch."
   :group 'ack-menu
   :type 'directory)
 
+(defcustom ack-pushy-match-prompt nil
+  "Prompt for match as soon as ack-menu is run."
+  :group 'ack-menu
+  :type 'boolean)
+
 ;;; faces ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defface ack-separator
@@ -823,7 +828,8 @@ specified options."
     (when (null (assoc "--match" args))
       (setq args (mag-menu-set-option args "--match" (ack-get-current-word "search"))))
     (mag-menu ack-menu-group args)
-    (mag-menu-add-argument ack-menu-group "--match=" 'mag-menu-read-generic 'ack-menu-match-history)))
+    (when ack-pushy-match-prompt
+      (mag-menu-add-argument ack-menu-group "--match=" 'mag-menu-read-generic 'ack-menu-match-history))))
 
 (defun ack-filter-args (args args-to-remove)
   (let* ((args-to-remove (mapcar (lambda (arg) (cons arg (cdr (assoc arg args)))) args-to-remove))
