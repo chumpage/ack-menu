@@ -470,6 +470,11 @@ properties. The text properties that may be added:
 (defun ack-uses-line-color ()
   (>= (string-to-number (ack-version-string)) 1.94))
 
+(defun ack-check-version ()
+  (let ((version (ack-version-string)))
+    (when (< (string-to-number version) 1.94)
+      (error "Ack-menu only supports ack version 1.94 or later. Yours is %s." version))))
+
 (defun ack-list-files (directory &rest arguments)
   (with-temp-buffer
     (let ((default-directory directory))
@@ -821,6 +826,7 @@ properties. The text properties that may be added:
   "Invoke the ack menu. When finished, ack will be run with the
 specified options."
   (interactive)
+  (ack-check-version)
   (setq ack-menu-current-state (list (current-buffer) (ack-get-current-word nil)))
   (let ((args (copy-tree ack-menu-options)))
     (when (null (assoc "--directory" args))
