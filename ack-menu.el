@@ -739,54 +739,91 @@ properties. The text properties that may be added:
     (actions
      ("r" "Run" ack-menu-action))
     (switches
-     ("-c" "Current project dir" "-c")
-     ("-l" "Local project dir" "-l")
+     ("-c" "Current project dir" "-c" ack-menu-current-project-switch)
+     ("-bd" "Buffer dir" "-bd" ack-menu-buffer-dir-switch)
+     ("-bp" "Buffer project root dir" "-bp" ack-menu-buffer-project-dir-switch)
      ("-a" "All files" "--all")
      ("-i" "Ignore case" "--ignore-case")
      ("-n" "No recurse" "--no-recurse")
-     ("-fm" "Only print file names matched" "--files-with-matches")
-     ("-fs" "Only print file names searched" "-f")
+     ("-fm" "Only print file names matched" "--files-with-matches" ack-menu-only-print-files-switch)
+     ("-fs" "Only print file names searched" "-f" ack-menu-only-print-files-switch)
      ("-w" "Match whole word" "--word-regexp")
      ("-q" "Literal search, no regex" "--literal"))
     (arguments
-     ("-m" "Match" "--match=" ack-menu-read-match)
-     ("-d" "Directory" "--directory=" read-directory-name)
-     ("-B" "Num context lines before" "--before-context=" read-from-minibuffer)
-     ("-A" "Num context lines after" "--after-context=" read-from-minibuffer)
-     ("-C" "Num context lines around" "--context=" read-from-minibuffer))))
+     ("-m" "Match" "--match=" mag-menu-read-generic ack-menu-match-history)
+     ("-d" "Directory" "--directory=" mag-menu-read-directory-name)
+     ("-B" "Num context lines before" "--before-context=" mag-menu-read-generic)
+     ("-A" "Num context lines after" "--after-context=" mag-menu-read-generic)
+     ("-C" "Num context lines around" "--context=" mag-menu-read-generic))))
 
+(defun ack-buffer-major-mode (buffer)
+  (save-excursion
+    (set-buffer buffer)
+    major-mode))
+
+(defun ack-buffer-dir (buffer)
+  (let (mode (ack-buffer-major-mode buffer))
+    (if (or (buffer-file-name buffer)
+            (string= mode "shell-mode")
+            (string= mode "term-mode")
+            (string= mode "dired-mode"))
+        (save-excursion
+          (set-buffer buffer)
+          default-directory)
+        (file-name-as-directory (getenv "HOME")))))
+
+(defun ack-get-current-word (default)
+  (if (word-at-point)
+      (substring-no-properties (word-at-point))
+      default))
+
+(defvar ack-menu-current-state nil)
 (defvar ack-menu-options '(("--ignore-case")))
 (defvar ack-menu-match-history nil)
 
-(defun ack-menu-read-match (prompt)
-  ;; To automatically insert the last match in the prompt, use this line
-  ;; (read-from-minibuffer prompt (car ack-menu-match-history) nil nil '(ack-menu-match-history . 1))
-  (read-from-minibuffer prompt nil nil nil 'ack-menu-match-history))
+(defun ack-menu-current-project-switch (option-name options)
+  (if ack-current-project-directory
+      (mag-menu-set-option options "--directory" ack-current-project-directory)
+      (error "ack-current-project-directory isn't set")))
 
-(defun ack-get-current-dir ()
-  (if (or (buffer-file-name)
-          (string= major-mode "shell-mode")
-          (string= major-mode "term-mode")
-          (string= major-mode "dired-mode"))
-      default-directory
-      (file-name-as-directory (getenv "HOME"))))
+(defun ack-menu-buffer-dir-switch (option-name options)
+  (let* ((buffer (car ack-menu-current-state))
+         (dir (ack-buffer-dir buffer)))
+    (if dir
+        (mag-menu-set-option options "--directory" dir)
+        (error "No directory for buffer '%s'" buffer))))
+
+(defun ack-menu-buffer-project-dir-switch (option-name options)
+  (let* ((buffer (car ack-menu-current-state))
+         (project-root (save-excursion
+                         (set-buffer buffer)
+                         (ack-guess-project-root))))
+    (if project-root
+        (mag-menu-set-option options "--directory" project-root)
+        (error "Failed to guess project root for buffer '%s'" buffer))))
+
+(defun ack-menu-only-print-files-switch (option-name options)
+  ;; --files-with-matches and -f are mutually exclusive
+  (if (null (assoc option-name options))
+      (dolist (file-match-option '("--files-with-matches" "-f") options)
+        (if (string= file-match-option option-name)
+            (setq options (mag-menu-set-option options file-match-option nil))
+            (setq options (mag-menu-remove-option options file-match-option))))
+      (mag-menu-remove-option options option-name)))
 
 ;;;###autoload
 (defun ack-menu ()
   "Invoke the ack menu. When finished, ack will be run with the
 specified options."
   (interactive)
+  (setq ack-menu-current-state (list (current-buffer) (ack-get-current-word nil)))
   (let ((args (copy-tree ack-menu-options)))
     (when (null (assoc "--directory" args))
-      (push '("--directory") args))
-    (setf (cdr (assoc "--directory" args)) (ack-get-current-dir))
+      (setq args (mag-menu-set-option args "--directory" (ack-buffer-dir (current-buffer)))))
     (when (null (assoc "--match" args))
-      (push `("--match" . ,(if (word-at-point)
-                               (substring-no-properties (word-at-point))
-                               "search"))
-            args))
+      (setq args (mag-menu-set-option args "--match" (ack-get-current-word "search"))))
     (mag-menu ack-menu-group args)
-    (mag-menu-add-argument ack-menu-group "--match=" 'ack-menu-read-match)))
+    (mag-menu-add-argument ack-menu-group "--match=" 'mag-menu-read-generic 'ack-menu-match-history)))
 
 (defun ack-filter-args (args args-to-remove)
   (let* ((args-to-remove (mapcar (lambda (arg) (cons arg (cdr (assoc arg args)))) args-to-remove))
@@ -802,29 +839,21 @@ specified options."
           args))
 
 (defun ack-process-args (args)
-  (flet ((get-directory (args)
-           (cond ((assoc "-c" args) (if ack-current-project-directory
-                                        ack-current-project-directory
-                                        (error "No current project directory")))
-                 ((assoc "-l" args) (if (ack-guess-project-root)
-                                        (ack-guess-project-root)
-                                        (error "Couldn't guess project root")))
-                 ((cdr (assoc "--directory" args))))))
-    (when (assoc "-f" args)
-      (setq args (remove* "--match" args :key 'car :test 'string=)))
-    (destructuring-bind (pass-through-args filtered-args)
-        (ack-filter-args args (split-string "-c -l --directory"))
-      (let ((dir (get-directory filtered-args))
-            (hard-coded-args '(("--color") ("--nopager"))))
-        (when (not (file-exists-p dir))
-          (error "No such directory %s" dir))
-        (list dir (ack-form-args-list (append hard-coded-args
-                                              ack-arguments
-                                              pass-through-args)))))))
+  (when (assoc "-f" args)
+    (setq args (mag-menu-remove-option args "--match")))
+  (destructuring-bind (pass-through-args filtered-args)
+      (ack-filter-args args (split-string "-c -bd -bp --directory"))
+    (let ((dir (cdr (assoc "--directory" filtered-args)))
+          (hard-coded-args '(("--color") ("--nopager"))))
+      (when (not (file-exists-p dir))
+        (error "No such directory %s" dir))
+      (list dir (ack-form-args-list (append hard-coded-args
+                                            ack-arguments
+                                            pass-through-args))))))
 
 (defun ack-menu-action (options)
   (interactive)
-  (setq ack-menu-options options)
+  (setq ack-menu-options (copy-tree options))
   (destructuring-bind (dir args) (ack-process-args ack-menu-options)
     (apply 'ack-run-impl (cons dir args))))
 
