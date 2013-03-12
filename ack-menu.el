@@ -772,7 +772,7 @@ properties. The text properties that may be added:
     major-mode))
 
 (defun ack-buffer-dir (buffer)
-  (let (mode (ack-buffer-major-mode buffer))
+  (let ((mode (ack-buffer-major-mode buffer)))
     (if (or (buffer-file-name buffer)
             (string= mode "shell-mode")
             (string= mode "term-mode")
