@@ -1,4 +1,4 @@
-;;; ack-menu.el --- A menu-based front-end for ack
+;;; ack-menu.el --- A menu-based front-end for ack   -*- lexical-binding: t; -*-
 ;;
 ;; Copyright (C) 2009-2011 Nikolaj Schumacher
 ;;
@@ -870,9 +870,5 @@ specified options."
     (apply 'ack-run-impl (cons dir args))))
 
 (provide 'ack-menu)
-
-;; Local Variables:
-;; lexical-binding: t
-;; End:
 
 ;;; ack-menu.el ends here
